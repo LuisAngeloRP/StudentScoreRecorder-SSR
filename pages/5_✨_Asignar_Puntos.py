@@ -55,7 +55,7 @@ def guardar_puntos():
 # Verificar curso y sesión seleccionados
 if 'curso_actual' not in st.session_state:
     st.warning("⚠️ Por favor, selecciona un curso en la página de Gestión de Cursos")
-    st.page_link("pages/1_gestionar_cursos.py", label="Ir a Gestión de Cursos")
+    st.page_link("pages/1_📚_Mis_Cursos.py", label="Ir a Gestión de Cursos")
     st.stop()
 
 # Selector de sesión

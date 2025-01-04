@@ -5,3 +5,4 @@ pandas
 python-dotenv
 plotly
 xlsxwriter
+openpyxl

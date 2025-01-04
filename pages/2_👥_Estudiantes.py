@@ -2,6 +2,8 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
+import streamlit.components.v1 as components
+import io
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Estudiantes", page_icon="👥")
@@ -39,24 +41,95 @@ def mostrar_encabezado():
         
         st.info(f"📚 Curso actual: {curso.data['nombre']}")
 
-# Título de la página y encabezado
-st.title("👥 Gestión de Estudiantes")
-mostrar_encabezado()
+# Función para crear y descargar plantilla
+def mostrar_boton_plantilla():
+    st.markdown("""
+    Para facilitar la carga de estudiantes, puedes descargar una plantilla con el formato requerido:
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    # Crear plantilla Excel
+    def crear_plantilla_excel():
+        df = pd.DataFrame({
+            'apellidos': ['Pérez García', 'Martínez López'],
+            'nombres': ['Juan', 'María']
+        })
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Estudiantes')
+        return buffer
+    
+    # Crear plantilla CSV
+    def crear_plantilla_csv():
+        df = pd.DataFrame({
+            'apellidos': ['Pérez García', 'Martínez López'],
+            'nombres': ['Juan', 'María']
+        })
+        return df.to_csv(index=False).encode('utf-8')
+    
+    # Botones de descarga
+    with col1:
+        excel_buffer = crear_plantilla_excel()
+        st.download_button(
+            label="📥 Descargar plantilla Excel",
+            data=excel_buffer.getvalue(),
+            file_name="plantilla_estudiantes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    with col2:
+        csv_data = crear_plantilla_csv()
+        st.download_button(
+            label="📥 Descargar plantilla CSV",
+            data=csv_data,
+            file_name="plantilla_estudiantes.csv",
+            mime="text/csv"
+        )
+
+def procesar_archivo(file):
+    try:
+        if file.name.endswith('.csv'):
+            df = pd.read_csv(file)
+        else:  # Excel file
+            df = pd.read_excel(file)
+        
+        if 'apellidos' not in df.columns or 'nombres' not in df.columns:
+            st.error("El archivo debe contener las columnas 'apellidos' y 'nombres'")
+            return None
+            
+        # Filtrar las filas de ejemplo si existen
+        ejemplos = [
+            ('Pérez García', 'Juan'),
+            ('Martínez López', 'María')
+        ]
+        
+        df = df[~df.apply(lambda row: (row['apellidos'].strip(), row['nombres'].strip()) in ejemplos, axis=1)]
+        
+        # Limpiar espacios en blanco
+        df['apellidos'] = df['apellidos'].str.strip()
+        df['nombres'] = df['nombres'].str.strip()
+        
+        return df
+    except Exception as e:
+        st.error(f"Error al procesar el archivo: {str(e)}")
+        return None
 
 def cargar_estudiantes_desde_archivo():
+    # Agregar el botón de descarga de plantilla
+    mostrar_boton_plantilla()
+    
+    st.markdown("---")  # Separador
+    
     uploaded_file = st.file_uploader(
-        "Cargar lista de estudiantes (CSV)", 
-        type=['csv'],
+        "Cargar lista de estudiantes (CSV o Excel)", 
+        type=['csv', 'xlsx', 'xls'],
         help="El archivo debe contener las columnas: apellidos,nombres"
     )
     
     if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            if 'apellidos' not in df.columns or 'nombres' not in df.columns:
-                st.error("El archivo debe contener las columnas 'apellidos' y 'nombres'")
-                return
-            
+        df = procesar_archivo(uploaded_file)
+        if df is not None:
             progress_bar = st.progress(0)
             estudiantes_agregados = 0
             errores = []
@@ -84,8 +157,6 @@ def cargar_estudiantes_desde_archivo():
                     for error in errores:
                         st.write(error)
             st.rerun()
-        except Exception as e:
-            st.error(f"Error al procesar el archivo: {str(e)}")
 
 def agregar_estudiante_manual():
     with st.form("nuevo_estudiante", clear_on_submit=True):
@@ -114,6 +185,10 @@ def agregar_estudiante_manual():
                         st.error("Este estudiante ya existe en el curso")
                     else:
                         st.error(f"Error al agregar estudiante: {str(e)}")
+
+# Título de la página y encabezado
+st.title("👥 Gestión de Estudiantes")
+mostrar_encabezado()
 
 # Tabs para diferentes funciones
 tab1, tab2 = st.tabs(["📤 Cargar desde archivo", "✍️ Agregar manualmente"])
@@ -185,10 +260,16 @@ except Exception as e:
 with st.expander("ℹ️ Información"):
     st.markdown("""
     ### Cómo agregar estudiantes:
-    1. **Carga masiva**: Usa un archivo CSV con las columnas 'apellidos' y 'nombres'
+    1. **Carga masiva**: 
+       - Descarga la plantilla Excel proporcionada
+       - Completa la información de los estudiantes
+       - Sube el archivo (soporta formatos CSV y Excel)
     2. **Agregar manual**: Ingresa los datos de cada estudiante individualmente
     
-    ### Formato del archivo CSV:
+    ### Formato del archivo:
+    - El archivo debe contener dos columnas: 'apellidos' y 'nombres'
+    - Puedes usar la plantilla Excel descargable para mayor facilidad
+    - También puedes usar un archivo CSV con el siguiente formato:
     ```
     apellidos,nombres
     Pérez García,Juan
