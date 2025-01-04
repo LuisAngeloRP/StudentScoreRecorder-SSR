@@ -1,8 +1,8 @@
-# pages/4_gestionar_sesiones.py
 import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import datetime, date
+import time
 
 # Configuración de la página
 st.set_page_config(page_title="Gestión de Sesiones", page_icon="📅")
@@ -40,9 +40,43 @@ def mostrar_encabezado():
         
         st.info(f"📚 Curso actual: {curso.data['nombre']}")
 
-# Título de la página y encabezado
-st.title("📅 Gestión de Sesiones")
-mostrar_encabezado()
+def actualizar_puntaje_maximo(sesion_id, nuevo_puntaje):
+    try:
+        # Validar el nuevo puntaje
+        if not isinstance(nuevo_puntaje, (int, float)) or nuevo_puntaje <= 0:
+            raise ValueError("El puntaje debe ser un número positivo")
+            
+        # Verificar si hay puntos asignados que excedan el nuevo máximo
+        puntos_individuales = supabase.table('puntos_individuales')\
+            .select('puntos')\
+            .eq('sesion_id', sesion_id)\
+            .execute()
+            
+        puntos_grupales = supabase.table('puntos_grupales')\
+            .select('puntos')\
+            .eq('sesion_id', sesion_id)\
+            .execute()
+            
+        # Verificar puntos individuales
+        for registro in puntos_individuales.data:
+            if registro['puntos'] > nuevo_puntaje:
+                return False, "Hay estudiantes con puntos individuales que exceden el nuevo máximo"
+                
+        # Verificar puntos grupales
+        for registro in puntos_grupales.data:
+            if registro['puntos'] > nuevo_puntaje:
+                return False, "Hay grupos con puntos que exceden el nuevo máximo"
+        
+        # Actualizar el puntaje máximo
+        supabase.table('sesiones')\
+            .update({'puntaje_maximo': nuevo_puntaje})\
+            .eq('id', sesion_id)\
+            .execute()
+            
+        return True, "Puntaje máximo actualizado exitosamente"
+        
+    except Exception as e:
+        return False, f"Error al actualizar el puntaje: {str(e)}"
 
 def obtener_siguiente_numero_sesion():
     sesiones = supabase.table('sesiones')\
@@ -63,6 +97,10 @@ def obtener_siguiente_numero_sesion():
             continue
     
     return max(numeros) + 1 if numeros else 1
+
+# Título y encabezado
+st.title("📅 Gestión de Sesiones")
+mostrar_encabezado()
 
 # Crear nueva sesión
 with st.form("nueva_sesion", clear_on_submit=True):
@@ -108,13 +146,27 @@ with st.form("nueva_sesion", clear_on_submit=True):
                 
                 sesion_id = sesion.data[0]['id']
                 
-                # Crear registros de puntos iniciales para todos los estudiantes
+                # Inicializar puntos individuales para todos los estudiantes
                 for estudiante in estudiantes.data:
-                    supabase.table('puntos_sesion').insert({
+                    supabase.table('puntos_individuales').insert({
                         'sesion_id': sesion_id,
                         'estudiante_id': estudiante['id'],
                         'puntos': 0
                     }).execute()
+                
+                # Inicializar puntos grupales para todos los grupos
+                grupos = supabase.table('grupos')\
+                    .select('id')\
+                    .eq('curso_id', st.session_state['curso_actual'])\
+                    .execute()
+                
+                if grupos.data:
+                    for grupo in grupos.data:
+                        supabase.table('puntos_grupales').insert({
+                            'sesion_id': sesion_id,
+                            'grupo_id': grupo['id'],
+                            'puntos': 0
+                        }).execute()
                 
                 st.success(f"✅ Sesión '{nombre_final}' creada exitosamente")
                 
@@ -123,6 +175,7 @@ with st.form("nueva_sesion", clear_on_submit=True):
                 st.session_state.sesion_nombre = nombre_final
                 
                 st.rerun()
+                
         except Exception as e:
             if 'unique_sesion_curso' in str(e):
                 st.error("Ya existe una sesión con este nombre en el curso")
@@ -173,24 +226,48 @@ try:
                 col1, col2 = st.columns([3, 1])
                 
                 with col1:
-                    st.write(f"**Puntaje Máximo:** {sesion['puntaje_maximo']}")
+                    # Input para modificar puntaje máximo
+                    nuevo_puntaje = st.number_input(
+                        "Puntaje Máximo",
+                        min_value=1.0,
+                        max_value=100.0,
+                        value=float(sesion['puntaje_maximo']),
+                        step=0.5,
+                        key=f"puntaje_{sesion['id']}"
+                    )
                     
-                    # Mostrar resumen de puntos de la sesión
-                    puntos = supabase.table('puntos_sesion')\
-                        .select('puntos')\
+                    # Botón para guardar cambios en el puntaje
+                    if nuevo_puntaje != sesion['puntaje_maximo']:
+                        if st.button("💾 Guardar nuevo puntaje", key=f"save_points_{sesion['id']}"):
+                            exito, mensaje = actualizar_puntaje_maximo(sesion['id'], nuevo_puntaje)
+                            if exito:
+                                st.success(f"✅ {mensaje}")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"❌ {mensaje}")
+                    
+                    # Obtener resumen de puntos de la sesión desde la vista
+                    resumen = supabase.table('puntos_totales')\
+                        .select('*')\
                         .eq('sesion_id', sesion['id'])\
                         .execute()
                     
-                    if puntos.data:
-                        puntos_df = pd.DataFrame(puntos.data)
+                    if resumen.data:
+                        puntos_df = pd.DataFrame([{
+                            'total': r['total'],
+                            'individuales': r['puntos_individuales'],
+                            'grupales': r['puntos_grupales']
+                        } for r in resumen.data])
+                        
                         st.write("**Estadísticas:**")
                         col_stats1, col_stats2, col_stats3 = st.columns(3)
                         with col_stats1:
-                            st.metric("Promedio", f"{puntos_df['puntos'].mean():.2f}")
+                            st.metric("Promedio Total", f"{puntos_df['total'].mean():.2f}")
                         with col_stats2:
-                            st.metric("Máximo", f"{puntos_df['puntos'].max():.2f}")
+                            st.metric("Máximo", f"{puntos_df['total'].max():.2f}")
                         with col_stats3:
-                            st.metric("Mínimo", f"{puntos_df['puntos'].min():.2f}")
+                            st.metric("Mínimo", f"{puntos_df['total'].min():.2f}")
                 
                 with col2:
                     # Botón para ir a asignar puntos
@@ -209,7 +286,7 @@ try:
                             .delete()\
                             .eq('id', sesion['id'])\
                             .execute()
-                        st.success("Sesión eliminada exitosamente")
+                        st.success("✅ Sesión eliminada exitosamente")
                         st.rerun()
     else:
         st.info("No hay sesiones creadas en este curso")
@@ -217,39 +294,17 @@ try:
 except Exception as e:
     st.error(f"Error al cargar las sesiones: {str(e)}")
 
-# Resumen
-st.markdown("---")
-if sesiones.data:
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total Sesiones", len(sesiones.data))
-    with col2:
-        promedios = []
-        for sesion in sesiones.data:
-            puntos = supabase.table('puntos_sesion')\
-                .select('puntos')\
-                .eq('sesion_id', sesion['id'])\
-                .execute()
-            if puntos.data:
-                promedio = sum(p['puntos'] for p in puntos.data) / len(puntos.data)
-                promedios.append(promedio)
-        if promedios:
-            st.metric("Promedio General", f"{sum(promedios)/len(promedios):.2f}")
-    with col3:
-        ultima_sesion = sorted(sesiones.data, key=lambda x: x['fecha'])[-1]
-        st.metric("Última Sesión", ultima_sesion['fecha'])
-
 # Información adicional
 with st.expander("ℹ️ Ayuda"):
     st.markdown("""
     ### Gestión de Sesiones:
     - Los nombres se autogeneran secuencialmente
     - Cada sesión tiene un puntaje máximo configurable
-    - Se inicializan los puntos en 0 para todos los estudiantes
+    - Se inicializan los puntos individuales y grupales en 0
     - Puedes ordenar y filtrar las sesiones
     
     ### Para asignar puntos:
     1. Crea una nueva sesión o selecciona una existente
     2. Usa el botón "Asignar Puntos" para ir a la página de asignación
-    3. Puedes asignar puntos por grupo o individualmente
+    3. Puedes asignar puntos individuales y grupales por separado
     """)

@@ -4,3 +4,4 @@ supabase
 pandas
 python-dotenv
 plotly
+xlsxwriter
