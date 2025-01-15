@@ -274,7 +274,7 @@ try:
                     if st.button("✏️ Asignar Puntos", key=f"points_{sesion['id']}"):
                         st.session_state.sesion_actual = sesion['id']
                         st.session_state.sesion_nombre = sesion['nombre']
-                        st.switch_page("pages/5_asignar_puntos.py")
+                        st.switch_page("pages/5_✨_Asignar_Puntos.py")
                     
                     # Botón para eliminar sesión
                     if st.button("🗑️ Eliminar", key=f"del_{sesion['id']}", type="primary"):

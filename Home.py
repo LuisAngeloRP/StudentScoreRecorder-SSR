@@ -32,30 +32,67 @@ if 'puntos_grupales_pendientes' not in st.session_state:
 if 'ultimo_cambio' not in st.session_state:
     st.session_state.ultimo_cambio = time.time()
 
+def chunk_dict(dictionary, chunk_size=10):
+    """Divide un diccionario en partes más pequeñas"""
+    items = list(dictionary.items())
+    for i in range(0, len(items), chunk_size):
+        yield dict(items[i:i + chunk_size])
+
 def guardar_puntos():
     with st.spinner('Guardando puntos...'):
         try:
+            MAX_RETRIES = 3
+            CHUNK_SIZE = 10
+            DELAY_BETWEEN_CHUNKS = 0.5  # segundos
+            
+            # Función auxiliar para actualizar con reintentos
+            def actualizar_con_reintentos(tabla, datos):
+                for intento in range(MAX_RETRIES):
+                    try:
+                        # Dividir las actualizaciones en lotes
+                        for chunk in chunk_dict(datos, CHUNK_SIZE):
+                            # Crear una lista de actualizaciones por lote
+                            updates = []
+                            for punto_id, puntos in chunk.items():
+                                updates.append({
+                                    'id': punto_id,
+                                    'puntos': puntos
+                                })
+                            
+                            # Realizar actualización en lote
+                            supabase.table(tabla)\
+                                .upsert(updates)\
+                                .execute()
+                            
+                            # Pequeña pausa entre lotes
+                            time.sleep(DELAY_BETWEEN_CHUNKS)
+                        return True
+                    except Exception as e:
+                        if intento == MAX_RETRIES - 1:  # Último intento
+                            raise e
+                        time.sleep(1)  # Esperar antes de reintentar
+                return False
+
             # Guardar puntos individuales
-            for punto_id, puntos in st.session_state.puntos_individuales_pendientes.items():
-                supabase.table('puntos_individuales')\
-                    .update({'puntos': puntos})\
-                    .eq('id', punto_id)\
-                    .execute()
-            st.session_state.puntos_individuales_pendientes = {}
+            if st.session_state.puntos_individuales_pendientes:
+                actualizar_con_reintentos('puntos_individuales', 
+                                        st.session_state.puntos_individuales_pendientes)
+                st.session_state.puntos_individuales_pendientes = {}
 
             # Guardar puntos grupales
-            for punto_id, puntos in st.session_state.puntos_grupales_pendientes.items():
-                supabase.table('puntos_grupales')\
-                    .update({'puntos': puntos})\
-                    .eq('id', punto_id)\
-                    .execute()
-            st.session_state.puntos_grupales_pendientes = {}
+            if st.session_state.puntos_grupales_pendientes:
+                actualizar_con_reintentos('puntos_grupales', 
+                                        st.session_state.puntos_grupales_pendientes)
+                st.session_state.puntos_grupales_pendientes = {}
 
             st.success('✅ Puntos guardados exitosamente')
             time.sleep(0.5)
             st.rerun()
+            
         except Exception as e:
-            st.error(f"Error al guardar puntos: {str(e)}")
+            st.error(f"Error al guardar puntos. Por favor, inténtalo de nuevo. Detalles: {str(e)}")
+            # No hacemos rerun aquí para mantener los cambios pendientes
+            return False
 
 # Título principal
 st.title("🎯 Sistema de Puntos")

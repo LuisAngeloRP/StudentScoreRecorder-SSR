@@ -23,7 +23,7 @@ def mostrar_encabezado():
     if 'curso_actual' not in st.session_state:
         st.warning("⚠️ No hay curso seleccionado")
         st.info("Por favor, selecciona un curso en la página de Gestión de Cursos")
-        st.page_link("pages/1_gestionar_cursos.py", label="Ir a Gestión de Cursos")
+        st.page_link("pages/1_📚_Mis_Cursos.py", label="Ir a Gestión de Cursos")
         st.stop()
     else:
         # Obtener información actualizada del curso

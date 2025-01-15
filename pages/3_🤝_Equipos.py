@@ -65,28 +65,24 @@ def obtener_siguiente_numero_grupo():
 
 def obtener_estudiantes_sin_grupo():
     try:
-        # Obtener todos los estudiantes del curso que no están en ningún grupo
-        query = f"""
-        SELECT e.* 
-        FROM estudiantes_curso e
-        LEFT JOIN estudiantes_grupo g ON e.id = g.estudiante_id
-        WHERE e.curso_id = {st.session_state['curso_actual']}
-        AND g.estudiante_id IS NULL
-        ORDER BY e.apellidos, e.nombres
-        """
-        response = supabase.table('estudiantes_curso').select("*").execute()
-        estudiantes = response.data
+        # Obtener estudiantes del curso actual que no están en ningún grupo
+        estudiantes_curso = supabase.table('estudiantes_curso')\
+            .select("*")\
+            .eq('curso_id', st.session_state['curso_actual'])\
+            .execute()
         
-        if not estudiantes:
+        if not estudiantes_curso.data:
             return []
         
+        # Obtener IDs de estudiantes que ya están en grupos
         estudiantes_en_grupos = supabase.table('estudiantes_grupo')\
             .select('estudiante_id')\
             .execute()
         
         ids_en_grupos = [e['estudiante_id'] for e in estudiantes_en_grupos.data] if estudiantes_en_grupos.data else []
         
-        return [e for e in estudiantes if e['id'] not in ids_en_grupos]
+        # Filtrar estudiantes que no están en grupos
+        return [e for e in estudiantes_curso.data if e['id'] not in ids_en_grupos]
     
     except Exception as e:
         st.error(f"Error al obtener estudiantes: {str(e)}")
